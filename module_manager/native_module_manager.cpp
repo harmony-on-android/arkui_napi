@@ -1028,11 +1028,11 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
         }
         /*
          * The requirement is to ensure the abc format file is placed in the path
-         * /data/user/0/com.example.myapplication/files/arkui-x/systemres/abc.
+         * /data/user/0/com.example.myapplication/files/sys/systemres/abc.
          * Steps to follow:
-         * 1.	First, check if the /files/arkui-x directory exists.
+         * 1.	First, check if the /files/sys directory exists.
          * 2.	Verify that the original path consists of two paths separated by a colon (:).
-         * 3.	Identify whether /files/arkui-x is located in the portion before or after the colon.
+         * 3.	Identify whether /files/sys is located in the portion before or after the colon.
          * 4.	Extract and concatenate the appropriate part of the path to construct
          *      the full abc file path for subsequent logic to access the file
          */
