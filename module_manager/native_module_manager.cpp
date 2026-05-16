@@ -837,6 +837,8 @@ NativeModule* NativeModuleManager::LoadNativeModule(const char* moduleName, cons
 #if defined(ANDROID_PLATFORM)
     std::string strModule(moduleName);
     std::string strCutName = strModule;
+    // MODULEMNG_HILOG_ERROR("HOA-DEBUG LoadNativeModule: moduleName=%{public}s, path=%{public}s, isAppModule=%d",
+    //     moduleName, path ? path : "null", isAppModule);
     if (path != nullptr) {
         if (IsExistedPath(path)) {
             strModule = path;
@@ -861,6 +863,8 @@ NativeModule* NativeModuleManager::LoadNativeModule(const char* moduleName, cons
     NativeModule* cacheNativeModule = nullptr;
     NativeModuleHeadTailStruct cacheHeadTailNativeModule = { nullptr, nullptr, nullptr };
 #if defined(ANDROID_PLATFORM)
+    // MODULEMNG_HILOG_ERROR("HOA-DEBUG LoadNativeModule: strCutName=%{public}s, path=%{public}s",
+    //     strCutName.c_str(), path);
     if (!GetNativeModulePath(strCutName.c_str(), path, relativePath, isAppModule, nativeModulePath, NAPI_PATH_MAX)) {
         errInfo = "failed " + std::string(moduleName);
         MODULEMNG_HILOG_WARN("%{public}s", errInfo.c_str());
@@ -1001,6 +1005,8 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
 #ifdef ANDROID_PLATFORM
     isAppModule = true;
 #endif
+    // MODULEMNG_HILOG_ERROR("HOA-DEBUG GetNativeModulePath: moduleName=%{public}s, path=%{public}s, isAppModule=%d, IsExistedPath=%d",
+    //     moduleName, path, isAppModule, IsExistedPath(path));
     int32_t lengthOfModuleName = strlen(moduleName);
     char dupModuleName[NAPI_PATH_MAX] = { 0 };
     if (strcpy_s(dupModuleName, NAPI_PATH_MAX, moduleName) != 0) {
@@ -1031,13 +1037,26 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
          *      the full abc file path for subsequent logic to access the file
          */
         std::string prefixStr(prefix);
-        const std::string arkuiKey = "/files/arkui-x";
-        std::size_t arkuiPos = prefixStr.find(arkuiKey);
-        if (arkuiPos != std::string::npos) {
-            std::size_t endPos = arkuiPos + arkuiKey.length();
+        const std::string sysKey = "/files/sys";
+        std::size_t sysPos = prefixStr.find(sysKey);
+        if (sysPos == std::string::npos) {
+            const std::string filesKey = "/files/";
+            std::size_t filesPos = prefixStr.find(filesKey);
+            if (filesPos != std::string::npos) {
+                std::size_t endPos = filesPos + filesKey.length();
+                std::size_t delimiterPos2 = prefixStr.find(':');
+                if (delimiterPos2 != std::string::npos && filesPos > delimiterPos2) {
+                    sysAbcPrefix = prefixStr.substr(delimiterPos2 + 1, endPos - (delimiterPos2 + 1)) +
+                                   "sys/systemres/abc";
+                } else {
+                    sysAbcPrefix = prefixStr.substr(0, endPos) + "sys/systemres/abc";
+                }
+            }
+        } else {
+            std::size_t endPos = sysPos + sysKey.length();
             std::size_t delimiterPos = prefixStr.find(':');
             if (delimiterPos != std::string::npos) {
-                sysAbcPrefix = (arkuiPos < delimiterPos)
+                sysAbcPrefix = (sysPos < delimiterPos)
                                    ? prefixStr.substr(0, endPos) + "/systemres/abc"
                                    : prefixStr.substr(delimiterPos + 1, endPos - (delimiterPos + 1)) +
                                         "/systemres/abc";
@@ -1076,6 +1095,8 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
     }
 
     char* lastDot = strrchr(dupModuleName, '.');
+    // MODULEMNG_HILOG_ERROR("HOA-DEBUG GetNativeModulePath: lastDot=%{public}s, dupModuleName=%{public}s, isAppModule=%d, IsExistedPath=%d",
+    //     lastDot ? lastDot : "null", dupModuleName, isAppModule, IsExistedPath(path));
     if (lastDot == nullptr) {
         if (!isAppModule || !IsExistedPath(path)) {
 #ifdef ANDROID_PLATFORM
@@ -1187,6 +1208,14 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
 #ifdef ANDROID_PLATFORM
             if (sprintf_s(nativeModulePath[1], pathLength, "%s/%s/lib%s%s",
                 prefix, moduleName, afterDot, soPostfix) == -1) {
+                return false;
+            }
+            // HOA: On Android, the dotted-module-name branch above (lines 1164-1173)
+            // only sets nativeModulePath[2] (ABC path) for non-iOS. This branch
+            // (isAppModule && IsExistedPath) was missing ABC path construction,
+            // causing dotted module names to fail when loaded without a .so fallback.
+            if (sprintf_s(nativeModulePath[MODULE_PATH_SECONDARY_INDEX], pathLength, "%s/%s%s",
+                sysAbcPrefix.c_str(), afterDot, abcfix) == -1) {
                 return false;
             }
 #endif
@@ -1343,7 +1372,8 @@ NativeModule* NativeModuleManager::FindNativeModuleByDisk(const char* moduleName
 
     // load primary module path first
     char* loadPath = nativeModulePath[0];
-    MODULEMNG_HILOG_DEBUG("moduleName:%{public}s. path:%{public}s", moduleName, loadPath);
+    // MODULEMNG_HILOG_ERROR("HOA-DEBUG FindNativeModuleByDisk: moduleName=%{public}s, path[0]=%{public}s, path[1]=%{public}s, path[2]=%{public}s",
+    //     moduleName, nativeModulePath[0], nativeModulePath[1], nativeModulePath[2]);
     uint32_t errReason0 = MODULE_LOAD_SUCCESS;
     errInfo = "First: ";
     LIBHANDLE lib = LoadModuleLibrary(moduleKey, loadPath, path, isAppModule, errInfo, errReason0);
