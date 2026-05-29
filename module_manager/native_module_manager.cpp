@@ -1015,27 +1015,43 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
     }
 
     const char* prefix = nullptr;
-    if (isAppModule && IsExistedPath(path)) {
-        appLibPathMapMutex_.lock();
-        prefix = appLibPathMap_[path];
-        appLibPathMapMutex_.unlock();
 #ifdef ANDROID_PLATFORM
-        for (int32_t i = 0; i < lengthOfModuleName; i++) {
-            dupModuleName[i] = tolower(dupModuleName[i]);
+    // 'path' is a virtual module key (e.g. "app.hackeris.nativeexample/ets"),
+    // not a filesystem path. SetAppLibPath stores prefixes under
+    // "bundleName/moduleName" (e.g. "app.x/app.x.entry"), but LoadNativeModule
+    // calls us with "bundleName/entryPath" (e.g. "app.x/ets").  Try exact
+    // match first, then fall back to a same-bundle key.
+    appLibPathMapMutex_.lock();
+    prefix = appLibPathMap_[path];
+    if (prefix == nullptr && path != nullptr) {
+        std::string pathStr(path);
+        std::string bundlePrefix = pathStr.substr(0, pathStr.find('/')) + "/";
+        for (const auto& entry : appLibPathMap_) {
+            if (entry.first.find(bundlePrefix) == 0) {
+                prefix = entry.second;
+                break;
+            }
         }
-        if (prefix == nullptr) {
-            return false;
-        }
-        /*
-         * The requirement is to ensure the abc format file is placed in the path
-         * /data/user/0/com.example.myapplication/files/sys/systemres/abc.
-         * Steps to follow:
-         * 1.	First, check if the /files/sys directory exists.
-         * 2.	Verify that the original path consists of two paths separated by a colon (:).
-         * 3.	Identify whether /files/sys is located in the portion before or after the colon.
-         * 4.	Extract and concatenate the appropriate part of the path to construct
-         *      the full abc file path for subsequent logic to access the file
-         */
+    }
+    appLibPathMapMutex_.unlock();
+
+    for (int32_t i = 0; i < lengthOfModuleName; i++) {
+        dupModuleName[i] = tolower(dupModuleName[i]);
+    }
+    if (prefix == nullptr) {
+        return false;
+    }
+    /*
+     * The requirement is to ensure the abc format file is placed in the path
+     * /data/user/0/com.example.myapplication/files/sys/systemres/abc.
+     * Steps to follow:
+     * 1.	First, check if the /files/sys directory exists.
+     * 2.	Verify that the original path consists of two paths separated by a colon (:).
+     * 3.	Identify whether /files/sys is located in the portion before or after the colon.
+     * 4.	Extract and concatenate the appropriate part of the path to construct
+     *      the full abc file path for subsequent logic to access the file
+     */
+    {
         std::string prefixStr(prefix);
         const std::string sysKey = "/files/sys";
         std::size_t sysPos = prefixStr.find(sysKey);
@@ -1064,7 +1080,12 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
                 sysAbcPrefix = prefixStr.substr(0, endPos) + "/systemres/abc";
             }
         }
-#endif
+    }
+#else
+    if (isAppModule && IsExistedPath(path)) {
+        appLibPathMapMutex_.lock();
+        prefix = appLibPathMap_[path];
+        appLibPathMapMutex_.unlock();
     } else {
         if (relativePath[0]) {
             if (previewSearchPath_.empty()) {
@@ -1084,6 +1105,7 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
         }
 #endif
     }
+#endif
 
     int32_t lengthOfPostfix = strlen(soPostfix);
     if ((lengthOfModuleName > lengthOfPostfix) &&
@@ -1100,8 +1122,16 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
     if (lastDot == nullptr) {
         if (!isAppModule || !IsExistedPath(path)) {
 #ifdef ANDROID_PLATFORM
-            if (sprintf_s(nativeModulePath[0], pathLength, "lib%s%s", dupModuleName, soPostfix) == -1) {
-                return false;
+            if (prefix != nullptr) {
+                if (sprintf_s(nativeModulePath[0], pathLength, "%s/lib%s%s",
+                    prefix, dupModuleName, soPostfix) == -1) {
+                    return false;
+                }
+            } else {
+                if (sprintf_s(nativeModulePath[0], pathLength, "lib%s%s",
+                    dupModuleName, soPostfix) == -1) {
+                    return false;
+                }
             }
 #else
             if (sprintf_s(nativeModulePath[0], pathLength, "%s/lib%s%s%s",
@@ -1109,9 +1139,16 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
                 return false;
             }
 #endif
-            if (sprintf_s(nativeModulePath[1], pathLength, "%s/lib%s_napi%s%s",
-                prefix, dupModuleName, zfix, soPostfix) == -1) {
-                return false;
+            if (prefix != nullptr) {
+                if (sprintf_s(nativeModulePath[1], pathLength, "%s/lib%s_napi%s%s",
+                    prefix, dupModuleName, zfix, soPostfix) == -1) {
+                    return false;
+                }
+            } else {
+                if (sprintf_s(nativeModulePath[1], pathLength, "lib%s_napi%s%s",
+                    dupModuleName, zfix, soPostfix) == -1) {
+                    return false;
+                }
             }
 
             if (sprintf_s(nativeModulePath[MODULE_PATH_SECONDARY_INDEX], pathLength, "%s/%s%s",
@@ -1134,7 +1171,8 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
                     prefixStr.substr(0, pos).c_str(), dupModuleName, soPostfix);
                 libPath = prefixStr.substr(pos + 1);
             } else {
-                sprintfResult = sprintf_s(nativeModulePath[0], pathLength, "lib%s%s", dupModuleName, soPostfix);
+                sprintfResult = sprintf_s(nativeModulePath[0], pathLength, "%s/lib%s%s",
+                    prefixStr.c_str(), dupModuleName, soPostfix);
                 libPath = prefixStr;
             }
             if (sprintfResult == -1) {
@@ -1150,7 +1188,8 @@ bool NativeModuleManager::GetNativeModulePath(const char* moduleName, const char
                 dupModuleName, soPostfix) == -1) {
                 return false;
             }
-            if (IsExistedPath(libPath.c_str())) {
+            struct stat libPathStat;
+            if (stat(libPath.c_str(), &libPathStat) == 0 && S_ISDIR(libPathStat.st_mode)) {
                 std::swap(nativeModulePath[0], nativeModulePath[1]);
             }
             char* lastUnderScore = strrchr(dupModuleName, '_');
