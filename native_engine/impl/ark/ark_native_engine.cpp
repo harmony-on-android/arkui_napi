@@ -1877,14 +1877,33 @@ NativeTypedArrayType ArkNativeEngine::GetSendableTypedArrayType(panda::Local<pan
 /*
  * Before: input: 1. @ohos.hilog
                   2. @system.app (NATIVE_MODULE contains this name)
+                  3. @hms:security.deviceCertificate (pass-through, already in colon format)
+                  4. @hms.security.deviceCertificate (dot format, converted to colon)
  * After: return: 1.@ohos:hilog
  *                2.@native:system.app
+ *                3.@hms:security.deviceCertificate
+ *                4.@hms:security.deviceCertificate
  */
 std::string ArkNativeEngine::GetOhmurl(std::string path)
 {
     const std::regex reg("@(ohos|system)\\.(\\S+)");
     path.erase(0, path.find_first_not_of(" "));
     path.erase(path.find_last_not_of(" ") + 1);
+
+    // Pass through paths that are already in @prefix:name colon format
+    // (e.g. @hms:security.deviceCertificate, @ohos:xxx, @native:xxx)
+    if (path.size() > 2 && path[0] == '@' && path.find(':') != std::string::npos) {
+        return path;
+    }
+
+    // Convert @hms.xxx to @hms:xxx (dot format used at compile time,
+    // colon format required at runtime for module lookup)
+    if (path.size() > 5 && path.substr(0, 5) == "@hms.") {
+        int dotPos = static_cast<int>(path.find('.'));
+        std::string moduleName = path.substr(dotPos + 1);
+        return "@hms:" + moduleName;
+    }
+
     bool ret = std::regex_match(path, reg);
     if (!ret) {
         HILOG_ERROR("ArkNativeEngine:The module name doesn't comply with the naming rules");
