@@ -863,18 +863,27 @@ NativeModule* NativeModuleManager::LoadNativeModule(const char* moduleName, cons
     NativeModule* cacheNativeModule = nullptr;
     NativeModuleHeadTailStruct cacheHeadTailNativeModule = { nullptr, nullptr, nullptr };
 #if defined(ANDROID_PLATFORM)
-    // MODULEMNG_HILOG_ERROR("HOA-DEBUG LoadNativeModule: strCutName=%{public}s, path=%{public}s",
-    //     strCutName.c_str(), path);
-    if (!GetNativeModulePath(strCutName.c_str(), path, relativePath, isAppModule, nativeModulePath, NAPI_PATH_MAX)) {
-        errInfo = "failed " + std::string(moduleName);
-        MODULEMNG_HILOG_WARN("%{public}s", errInfo.c_str());
-        return nullptr;
-    }
+    // Check cache first for modules registered in memory (e.g. via
+    // napi_module_with_js_register). These modules don't have filesystem
+    // paths in appLibPathMap_ and would fail GetNativeModulePath below.
     NativeModule* nativeModule = FindNativeModuleByCache(strModule.c_str(), nativeModulePath, cacheNativeModule,
         cacheHeadTailNativeModule, true);
     if (nativeModule == nullptr) {
         nativeModule = FindNativeModuleByCache(strCutName.c_str(), nativeModulePath, cacheNativeModule,
             cacheHeadTailNativeModule, true);
+    }
+    if (nativeModule == nullptr) {
+        if (!GetNativeModulePath(strCutName.c_str(), path, relativePath, isAppModule, nativeModulePath, NAPI_PATH_MAX)) {
+            errInfo = "failed " + std::string(moduleName);
+            MODULEMNG_HILOG_WARN("%{public}s", errInfo.c_str());
+            return nullptr;
+        }
+        nativeModule = FindNativeModuleByCache(strModule.c_str(), nativeModulePath, cacheNativeModule,
+            cacheHeadTailNativeModule, true);
+        if (nativeModule == nullptr) {
+            nativeModule = FindNativeModuleByCache(strCutName.c_str(), nativeModulePath, cacheNativeModule,
+                cacheHeadTailNativeModule, true);
+        }
     }
 #else
     std::string key(moduleName);
