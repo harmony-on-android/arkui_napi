@@ -847,11 +847,16 @@ NativeModule* NativeModuleManager::LoadNativeModule(const char* moduleName, cons
         strModule = prefixTmp + '/' + moduleName;
     } else {
         path = "default";
-        if (strModule.find(".") != std::string::npos) {
-            char* temp = const_cast<char*>(strCutName.c_str());
-            for (char* p = strchr(temp, '.'); p != nullptr; p = strchr(p + 1, '.')) {
-                *p = '_';
-            }
+    }
+    // Convert dots to underscores for filesystem path lookup
+    // (e.g. "file.fs" → "file_fs" to find libfile_fs.so), but keep
+    // strCutName with dots so cache keys match the nm_modname
+    // registered by the .so (which uses the original dotted form).
+    std::string strPathName = strCutName;
+    if (strPathName.find(".") != std::string::npos) {
+        char* temp = const_cast<char*>(strPathName.c_str());
+        for (char* p = strchr(temp, '.'); p != nullptr; p = strchr(p + 1, '.')) {
+            *p = '_';
         }
     }
 #endif
@@ -873,7 +878,7 @@ NativeModule* NativeModuleManager::LoadNativeModule(const char* moduleName, cons
             cacheHeadTailNativeModule, true);
     }
     if (nativeModule == nullptr) {
-        if (!GetNativeModulePath(strCutName.c_str(), path, relativePath, isAppModule, nativeModulePath, NAPI_PATH_MAX)) {
+        if (!GetNativeModulePath(strPathName.c_str(), path, relativePath, isAppModule, nativeModulePath, NAPI_PATH_MAX)) {
             errInfo = "failed " + std::string(moduleName);
             MODULEMNG_HILOG_WARN("%{public}s", errInfo.c_str());
             return nullptr;
